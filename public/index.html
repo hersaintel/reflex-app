@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+  <title>Reflex – Delivery Readiness</title>
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+  <style>
+    :root {
+      --bg: #0f1412;
+      --surface: #1a211e;
+      --border: #2a322e;
+      --ink: #ede9de;
+      --muted: #8a8f86;
+      --accent: #a8d95e;
+      --amber: #e8a54a;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--ink);
+      min-height: 100vh;
+      line-height: 1.5;
+    }
+    .container { max-width: 960px; margin: 0 auto; padding: 1.5rem; }
+
+    /* Centered login */
+    #login-view {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 1.5rem;
+    }
+    #login-view h1 { font-size: 2.2rem; margin-bottom: 0.3rem; }
+    #login-view .card { max-width: 380px; width: 100%; text-align: left; margin-top: 1.5rem; }
+
+    h1 { font-size: 1.75rem; margin-bottom: 0.25rem; }
+    h2 { font-size: 1.25rem; margin: 1.5rem 0 0.75rem; color: var(--accent); }
+    .muted { color: var(--muted); font-size: 0.9rem; }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.25rem;
+      margin-bottom: 1rem;
+    }
+    .btn {
+      display: inline-block;
+      background: var(--accent);
+      color: #0f1412;
+      border: none;
+      padding: 0.65rem 1.3rem;
+      border-radius: 8px;
+      font-weight: 600;
+      cursor: pointer;
+      font-size: 0.95rem;
+    }
+    .btn:hover { filter: brightness(1.1); }
+    .btn-secondary { background: transparent; border: 1px solid var(--border); color: var(--ink); }
+    .btn-sm { padding: 0.35rem 0.75rem; font-size: 0.85rem; }
+    .btn-block { width: 100%; }
+    input, select, textarea {
+      width: 100%;
+      padding: 0.65rem 0.85rem;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--ink);
+      margin-bottom: 0.75rem;
+      font-size: 1rem;
+    }
+    label { display: block; font-size: 0.85rem; color: var(--muted); margin-bottom: 0.25rem; }
+    .status {
+      display: inline-block;
+      padding: 0.2rem 0.6rem;
+      border-radius: 999px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+    .status-pending { background: #3a3a20; color: #e8d54a; }
+    .status-assigned { background: #1e3a4a; color: #5ac8e8; }
+    .status-picked_up { background: #2a3a1e; color: var(--accent); }
+    .status-delivered { background: #1e3a2a; color: #5ae88a; }
+    .row { display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: center; }
+    .hidden { display: none !important; }
+    .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; }
+    .badge { background: var(--surface); border: 1px solid var(--border); padding: 0.3rem 0.7rem; border-radius: 6px; font-size: 0.85rem; }
+    .toast {
+      position: fixed; bottom: 1.5rem; right: 1.5rem;
+      background: var(--accent); color: #0f1412;
+      padding: 0.75rem 1.25rem; border-radius: 8px;
+      font-weight: 600; opacity: 0; transition: opacity 0.3s; z-index: 200;
+    }
+    .toast.show { opacity: 1; }
+    #qr-modal, #scan-modal {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.85);
+      display: flex; align-items: center; justify-content: center; z-index: 100;
+      flex-direction: column;
+    }
+    #qr-modal .card, #scan-modal .card { max-width: 360px; width: 90%; text-align: center; }
+    #qr-modal img { max-width: 100%; border-radius: 8px; }
+    #reader { width: 100%; max-width: 360px; border-radius: 12px; overflow: hidden; }
+
+    /* Customer confirmation page */
+    #confirm-view {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 1.5rem;
+      text-align: center;
+    }
+    #confirm-view .card { max-width: 420px; width: 100%; }
+  </style>
+</head>
+<body>
+  <!-- LOGIN (centered) -->
+  <div id="login-view">
+    <h1>Reflex</h1>
+    <p class="muted">Delivery readiness for Kenyan retailers</p>
+    <div class="card">
+      <label>Name</label>
+      <input id="login-name" placeholder="e.g. Brian Rider" />
+      <label>Password</label>
+      <input id="login-pass" type="password" placeholder="rider123" />
+      <button class="btn btn-block" style="margin-top:0.5rem" onclick="login()">Sign in</button>
+      <p class="muted" style="margin-top:1.2rem;font-size:0.8rem;text-align:center">
+        Demo accounts<br>
+        Wanjiku Electronics / retailer123<br>
+        James Dispatcher / dispatch123<br>
+        Brian Rider / rider123
+      </p>
+    </div>
+  </div>
+
+  <!-- MAIN APP -->
+  <div id="app-view" class="hidden">
+    <div class="container">
+      <div class="header">
+        <div>
+          <h1>Reflex</h1>
+          <p class="muted" id="user-label"></p>
+        </div>
+        <div class="row">
+          <span class="badge" id="role-badge"></span>
+          <button class="btn btn-secondary btn-sm" onclick="logout()">Logout</button>
+        </div>
+      </div>
+
+      <div id="retailer-panel" class="hidden">
+        <h2>New Delivery Request</h2>
+        <div class="card">
+          <label>Customer Name</label>
+          <input id="cust-name" />
+          <label>Customer Phone</label>
+          <input id="cust-phone" placeholder="+254..." />
+          <label>Address</label>
+          <input id="cust-address" />
+          <label>Item Description</label>
+          <textarea id="item-desc" rows="2"></textarea>
+          <button class="btn" onclick="createDelivery()">Log Request</button>
+        </div>
+        <h2>My Deliveries</h2>
+        <div id="retailer-list"></div>
+      </div>
+
+      <div id="dispatcher-panel" class="hidden">
+        <h2>Open Requests</h2>
+        <div id="dispatcher-list"></div>
+      </div>
+
+      <div id="rider-panel" class="hidden">
+        <h2>My Assignments</h2>
+        <div class="row" style="margin-bottom:1rem">
+          <button class="btn btn-sm" onclick="startScan()">📷 Scan QR</button>
+          <button class="btn btn-secondary btn-sm" onclick="manualConfirm()">Enter ID</button>
+        </div>
+        <div id="rider-list"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CUSTOMER CONFIRMATION PAGE (public) -->
+  <div id="confirm-view" class="hidden">
+    <div class="card">
+      <h1 style="font-size:1.6rem;margin-bottom:0.5rem">Confirm Delivery</h1>
+      <p class="muted" id="confirm-status-text">Loading…</p>
+      <div id="confirm-details" style="margin:1.2rem 0;text-align:left"></div>
+      <button id="confirm-btn" class="btn btn-block" onclick="customerConfirm()" style="display:none">
+        ✓ I received the package
+      </button>
+      <p id="confirm-done" class="muted" style="display:none;margin-top:1rem;color:var(--accent)">
+        Thank you! Delivery confirmed.
+      </p>
+    </div>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <div id="qr-modal" class="hidden">
+    <div class="card">
+      <h3 style="margin-bottom:0.75rem">Show this QR to the customer</h3>
+      <img id="qr-img" alt="QR" />
+      <p class="muted" style="margin:0.75rem 0;font-size:0.8rem">
+        Customer scans → confirms receipt
+      </p>
+      <button class="btn btn-secondary" onclick="closeQr()">Close</button>
+    </div>
+  </div>
+
+  <div id="scan-modal" class="hidden">
+    <div class="card">
+      <h3 style="margin-bottom:0.75rem">Scan Reflex QR</h3>
+      <div id="reader"></div>
+      <button class="btn btn-secondary" style="margin-top:0.75rem" onclick="stopScan()">Cancel</button>
+    </div>
+  </div>
+
+  <script>
+    let token = localStorage.getItem('reflex_token');
+    let user = JSON.parse(localStorage.getItem('reflex_user') || 'null');
+    let riders = [];
+    let html5QrCode = null;
+    let currentConfirmId = null;
+    const socket = io();
+
+    // ── Route detection ────────────────────────────────────────
+    const path = window.location.pathname;
+    if (path.startsWith('/confirm/')) {
+      document.getElementById('login-view').classList.add('hidden');
+      document.getElementById('app-view').classList.add('hidden');
+      document.getElementById('confirm-view').classList.remove('hidden');
+      currentConfirmId = path.split('/confirm/')[1];
+      loadConfirmPage(currentConfirmId);
+    } else if (token && user) {
+      showApp();
+    }
+
+    function toast(msg) {
+      const t = document.getElementById('toast');
+      t.textContent = msg;
+      t.classList.add('show');
+      setTimeout(() => t.classList.remove('show'), 2800);
+    }
+
+    async function api(path, opts = {}) {
+      const headers = { 'Content-Type': 'application/json', ...(opts.headers || {}) };
+      if (token) headers['Authorization'] = 'Bearer ' + token;
+      const res = await fetch('/api' + path, { ...opts, headers });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Request failed');
+      return data;
+    }
+
+    // ── Customer confirmation page ─────────────────────────────
+    async function loadConfirmPage(id) {
+      try {
+        const d = await fetch('/api/public/delivery/' + id).then(r => r.json());
+        if (d.error) throw new Error(d.error);
+
+        document.getElementById('confirm-details').innerHTML = `
+          <p><strong>${d.customer_name}</strong></p>
+          <p class="muted">${d.item_description}</p>
+          <p class="muted" style="margin-top:0.5rem">From: ${d.retailer_name || '—'}</p>
+          <p class="muted">Rider: ${d.rider_name || '—'}</p>
+          <p style="margin-top:0.8rem">${statusBadge(d.status)}</p>
+        `;
+
+        if (d.status === 'delivered') {
+          document.getElementById('confirm-status-text').textContent = 'Already confirmed';
+          document.getElementById('confirm-done').style.display = 'block';
+        } else {
+          document.getElementById('confirm-status-text').textContent = 'Please confirm you received this package';
+          document.getElementById('confirm-btn').style.display = 'block';
+        }
+      } catch (e) {
+        document.getElementById('confirm-status-text').textContent = e.message || 'Delivery not found';
+      }
+    }
+
+    async function customerConfirm() {
+      try {
+        await fetch('/api/public/confirm/' + currentConfirmId, { method: 'POST' })
+          .then(r => r.json())
+          .then(data => {
+            if (data.error) throw new Error(data.error);
+            document.getElementById('confirm-btn').style.display = 'none';
+            document.getElementById('confirm-done').style.display = 'block';
+            document.getElementById('confirm-status-text').textContent = 'Confirmed';
+            toast('Delivery confirmed. Thank you!');
+          });
+      } catch (e) {
+        toast(e.message);
+      }
+    }
+
+    // ── Auth & main app (same as before) ───────────────────────
+    async function login() {
+      const name = document.getElementById('login-name').value.trim();
+      const password = document.getElementById('login-pass').value;
+      try {
+        const data = await api('/login', { method: 'POST', body: JSON.stringify({ name, password }) });
+        token = data.token;
+        user = data.user;
+        localStorage.setItem('reflex_token', token);
+        localStorage.setItem('reflex_user', JSON.stringify(user));
+        showApp();
+      } catch (e) { toast(e.message); }
+    }
+
+    function logout() {
+      token = null; user = null;
+      localStorage.removeItem('reflex_token');
+      localStorage.removeItem('reflex_user');
+      location.href = '/';
+    }
+
+    function showApp() {
+      document.getElementById('login-view').classList.add('hidden');
+      document.getElementById('confirm-view').classList.add('hidden');
+      document.getElementById('app-view').classList.remove('hidden');
+      document.getElementById('user-label').textContent = user.name;
+      document.getElementById('role-badge').textContent = user.role.toUpperCase();
+      ['retailer','dispatcher','rider'].forEach(r => {
+        document.getElementById(r + '-panel').classList.add('hidden');
+      });
+      document.getElementById(user.role + '-panel').classList.remove('hidden');
+      if (user.role === 'dispatcher') loadRiders().then(loadDeliveries);
+      else loadDeliveries();
+    }
+
+    async function loadRiders() { riders = await api('/riders'); }
+    async function loadDeliveries() {
+      const list = await api('/deliveries');
+      if (user.role === 'retailer') renderRetailer(list);
+      else if (user.role === 'dispatcher') renderDispatcher(list);
+      else if (user.role === 'rider') renderRider(list);
+    }
+
+    function statusBadge(s) {
+      return `<span class="status status-${s}">${s.replace('_', ' ')}</span>`;
+    }
+
+    function renderRetailer(list) {
+      const el = document.getElementById('retailer-list');
+      if (!list.length) { el.innerHTML = '<p class="muted">No deliveries yet.</p>'; return; }
+      el.innerHTML = list.map(d => `
+        <div class="card">
+          <div class="row" style="justify-content:space-between">
+            <strong>${d.customer_name}</strong> ${statusBadge(d.status)}
+          </div>
+          <p class="muted" style="margin:0.4rem 0">${d.item_description}</p>
+          <p style="font-size:0.9rem">${d.address}</p>
+          ${d.rider_name ? `<p class="muted">Rider: ${d.rider_name}</p>` : ''}
+          <button class="btn btn-secondary btn-sm" style="margin-top:0.5rem" onclick="showQr('${d.id}')">Show QR</button>
+        </div>
+      `).join('');
+    }
+
+    function renderDispatcher(list) {
+      const el = document.getElementById('dispatcher-list');
+      const pending = list.filter(d => d.status === 'pending');
+      const others = list.filter(d => d.status !== 'pending');
+      let html = pending.length ? pending.map(d => `
+        <div class="card">
+          <div class="row" style="justify-content:space-between">
+            <strong>${d.customer_name}</strong> ${statusBadge(d.status)}
+          </div>
+          <p class="muted">${d.item_description} · ${d.address}</p>
+          <p class="muted" style="font-size:0.8rem">From: ${d.retailer_name || '—'}</p>
+          <div class="row" style="margin-top:0.75rem">
+            <select id="rider-${d.id}" style="flex:1;margin:0">
+              <option value="">Select rider…</option>
+              ${riders.map(r => `<option value="${r.id}">${r.name}</option>`).join('')}
+            </select>
+            <button class="btn btn-sm" onclick="assign('${d.id}')">Assign</button>
+          </div>
+        </div>
+      `).join('') : '<p class="muted">No open requests.</p>';
+
+      if (others.length) {
+        html += '<h2 style="margin-top:1.5rem">In Progress / Done</h2>';
+        html += others.map(d => `
+          <div class="card">
+            <div class="row" style="justify-content:space-between">
+              <strong>${d.customer_name}</strong> ${statusBadge(d.status)}
+            </div>
+            <p class="muted">${d.item_description}</p>
+            <p class="muted" style="font-size:0.85rem">Rider: ${d.rider_name || '—'} · ${d.address}</p>
+          </div>
+        `).join('');
+      }
+      el.innerHTML = html;
+    }
+
+    function renderRider(list) {
+      const el = document.getElementById('rider-list');
+      if (!list.length) { el.innerHTML = '<p class="muted">No assignments yet.</p>'; return; }
+      el.innerHTML = list.map(d => `
+        <div class="card">
+          <div class="row" style="justify-content:space-between">
+            <strong>${d.customer_name}</strong> ${statusBadge(d.status)}
+          </div>
+          <p class="muted">${d.item_description}</p>
+          <p>${d.address}</p>
+          <p class="muted" style="font-size:0.85rem">${d.customer_phone || ''}</p>
+          <div class="row" style="margin-top:0.75rem">
+            ${d.status === 'assigned' ? `<button class="btn btn-sm" onclick="updateStatus('${d.id}','picked_up')">Mark Picked Up</button>` : ''}
+            ${d.status === 'picked_up' ? `<button class="btn btn-sm" onclick="updateStatus('${d.id}','delivered')">Mark Delivered</button>` : ''}
+            <button class="btn btn-secondary btn-sm" onclick="showQr('${d.id}')">Show QR to Customer</button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    async function createDelivery() {
+      try {
+        await api('/deliveries', {
+          method: 'POST',
+          body: JSON.stringify({
+            customer_name: document.getElementById('cust-name').value,
+            customer_phone: document.getElementById('cust-phone').value,
+            address: document.getElementById('cust-address').value,
+            item_description: document.getElementById('item-desc').value
+          })
+        });
+        toast('Request logged');
+        ['cust-name','cust-phone','cust-address','item-desc'].forEach(id => document.getElementById(id).value = '');
+        loadDeliveries();
+      } catch (e) { toast(e.message); }
+    }
+
+    async function assign(id) {
+      const rider_id = document.getElementById('rider-' + id).value;
+      if (!rider_id) return toast('Select a rider');
+      try {
+        await api('/deliveries/' + id + '/assign', { method: 'POST', body: JSON.stringify({ rider_id }) });
+        toast('Assigned');
+        loadDeliveries();
+      } catch (e) { toast(e.message); }
+    }
+
+    async function updateStatus(id, status) {
+      try {
+        await api('/deliveries/' + id + '/status', { method: 'POST', body: JSON.stringify({ status }) });
+        toast('Status updated');
+        loadDeliveries();
+      } catch (e) { toast(e.message); }
+    }
+
+    async function showQr(id) {
+      try {
+        const data = await api('/deliveries/' + id + '/qr');
+        document.getElementById('qr-img').src = data.qr;
+        document.getElementById('qr-modal').classList.remove('hidden');
+      } catch (e) { toast(e.message); }
+    }
+    function closeQr() { document.getElementById('qr-modal').classList.add('hidden'); }
+
+    function startScan() {
+      document.getElementById('scan-modal').classList.remove('hidden');
+      html5QrCode = new Html5Qrcode("reader");
+      html5QrCode.start(
+        { facingMode: "environment" },
+        { fps: 10, qrbox: { width: 250, height: 250 } },
+        async (decodedText) => {
+          // If it's a full URL, extract the ID
+          let id = decodedText;
+          if (decodedText.includes('/confirm/')) {
+            id = decodedText.split('/confirm/')[1].split(/[?#]/)[0];
+          } else {
+            try {
+              const p = JSON.parse(decodedText);
+              if (p.deliveryId) id = p.deliveryId;
+            } catch {}
+          }
+          try {
+            await api('/deliveries/confirm-scan', {
+              method: 'POST',
+              body: JSON.stringify({ deliveryId: id })
+            });
+            toast('Confirmed via scan ✓');
+            stopScan();
+            loadDeliveries();
+          } catch (e) { toast(e.message); }
+        },
+        () => {}
+      ).catch(() => {
+        toast('Camera blocked – use manual entry');
+        stopScan();
+        manualConfirm();
+      });
+    }
+
+    function stopScan() {
+      if (html5QrCode) {
+        html5QrCode.stop().then(() => { html5QrCode.clear(); html5QrCode = null; }).catch(() => {});
+      }
+      document.getElementById('scan-modal').classList.add('hidden');
+    }
+
+    async function manualConfirm() {
+      const id = prompt('Paste delivery ID:');
+      if (!id) return;
+      try {
+        await api('/deliveries/confirm-scan', {
+          method: 'POST',
+          body: JSON.stringify({ deliveryId: id.trim() })
+        });
+        toast('Confirmed ✓');
+        loadDeliveries();
+      } catch (e) { toast(e.message); }
+    }
+
+    socket.on('delivery:new', () => { if (user) { loadDeliveries(); toast('New request'); }});
+    socket.on('delivery:updated', () => { if (user) loadDeliveries(); });
+  </script>
+</body>
+</html>
